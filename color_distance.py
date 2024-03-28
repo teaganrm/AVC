@@ -1,4 +1,5 @@
 import cv2
+import keyboard
 import numpy as np
 from realsense_depth import DepthCamera
 
@@ -10,14 +11,32 @@ FOV = 64
 PIXELS_PER_DEGREE = round(WINDOW_SIZE / FOV)
 # half of the window size
 HALF_WINDOW_SIZE = round(WINDOW_SIZE / 2)
+# distance threshold in mm
+DISTANCE_THRESHOLD = 250
+# obstacle counter
+obstacleCount = 0
+
+# keyboard event callback to increment obstacle counter
+def on_key_event(event):
+    global obstacleCount
+    if (event.event_type == keyboard.KEY_DOWN):
+        obstacleCount+=1
+        if obstacleCount in [0, 2, 4, 6]:
+            print("Looking for blues")
+        elif obstacleCount in [1, 3]:
+            print("Looking for yellows")
+        elif obstacleCount == 5:
+            print("Looking for reds")
+        else:
+            print("No more obstacles.")
+            return
+        print("Count:", obstacleCount)
+
 
 def show_distance(event, x, y, args, params):
     print(x, y)
 
 def detect_largest_color(mask, color_name, color_frame):
-    # in this case, windowHalf = 320, pixelsPerDegree = 10
-    global HALF_WINDOW_SIZE
-    global PIXELS_PER_DEGREE
     mask_contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     largest_contour = None
     largest_contour_area = 0
@@ -30,29 +49,81 @@ def detect_largest_color(mask, color_name, color_frame):
 
     if largest_contour_area > 500:
         x, y, w, h = cv2.boundingRect(largest_contour)
-        # degrees to turn = (midpoint-half of window size) / pixels per degree. round to integer. 
-        midpoint = x+(w/2)
-        degreesToTurn = round((midpoint - HALF_WINDOW_SIZE) / PIXELS_PER_DEGREE)
-        # if degreesToTurn negative, turn left. else turn right
-        direction = "L" if (degreesToTurn < 0) else "R"
-        # we only care about magnitude once we know direction
-        degreesToTurn = abs(degreesToTurn)
         cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-        # if we are within 1 degree of being centered, consider the vehicle aligned
-        if (degreesToTurn < 2):
-            name_and_message = color_name + ", " + "ALIGNED"
-        else:
-            name_and_message = color_name + ", " + direction + str(degreesToTurn)
-        cv2.putText(color_frame, name_and_message, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        cv2.putText(color_frame, color_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
         return (x + w // 2, y + h // 2)
     else:
         return None
+    
+def course_correct(center_x):
+    # in this case, windowHalf = 320, pixelsPerDegree = 10
+    global HALF_WINDOW_SIZE
+    global PIXELS_PER_DEGREE
+    # degrees to turn = (midpoint-half of window size) / pixels per degree. round to integer. 
+    degreesToTurn = round((center_x - HALF_WINDOW_SIZE) / PIXELS_PER_DEGREE)
+    # if degreesToTurn negative, turn left. else turn right
+    direction = 'L' if (degreesToTurn < 0) else 'R'
+    # we only care about magnitude once we know direction
+    degreesToTurn = abs(degreesToTurn)
+    # if we are within 5 degrees of being centered, consider the vehicle aligned
+    # return value: aligned, direction, degreesToTurn
+    if (degreesToTurn < 5):
+        return (True, '', 0)
+    else:
+        return (False, direction, str(degreesToTurn))
+    
+# each color function will print distance and message above center point
+def blue_bucket_function(center_x, distance):
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
+            message = " PERFORM ACTION"
+        else:
+            message = " ALIGNED"    # if aligned but far, probably do nothing
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
 
+def yellow_bucket_function(center_x, distance):
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
+            message = " PERFORM ACTION"
+        else:
+            message = " ALIGNED"    # if aligned but far, probably do nothing
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
+
+def red_bucket_function(center_x, distance):
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
+            message = " PERFORM ACTION"
+        else:
+            message = " ALIGNED"    # if aligned but far, probably do nothing
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
+    
 # Capturing webcam footage
 dc = DepthCamera()
 
 cv2.namedWindow("Color frame")
 # cv2.setMouseCallback("Color frame", show_distance)
+
+# Create color ranges
+lower_red, upper_red = np.array([168, 120, 120]), np.array([180, 255, 255])  # Red color range
+lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
+lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
+
+keyboard.on_press(on_key_event)
 
 while True:
     ret, depth_frame, color_frame = dc.get_frame()  # Reading webcam footage
@@ -60,30 +131,34 @@ while True:
 
     points = []
 
-    lower_red, upper_red = np.array([168, 120, 120]), np.array([180, 255, 255])  # Red color range
-    lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
-    lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
-
     red_mask = cv2.inRange(img, lower_red, upper_red)
     blue_mask = cv2.inRange(img, lower_blue, upper_blue)
     yellow_mask = cv2.inRange(img, lower_yellow, upper_yellow)
 
-    red_point = detect_largest_color(red_mask, "Red", color_frame)
-    blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
-    yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
+    # read only certain color depending on obstacle counter
+    if obstacleCount in [0, 2, 4, 6]:
+        blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
+        if (blue_point):
+            points.append(blue_point)
+    elif obstacleCount in [1, 3]:
+        yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
+        if (yellow_point):
+            points.append(yellow_point)
+    elif obstacleCount == 5:
+        red_point = detect_largest_color(red_mask, "Red", color_frame)
+        if (red_point):
+            points.append(red_point)
 
-    if red_point:
-        points.append(red_point)
-    if blue_point:
-        points.append(blue_point)
-    if yellow_point:
-        points.append(yellow_point)
-
+    # for each point call its respective function
     for point in points:
         cv2.circle(color_frame, point, 4, (0, 0, 255))
         distance = depth_frame[point[1], point[0]]
-        cv2.putText(color_frame, "{}mm".format(distance), (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
-                    2)
+        if point == blue_point:
+            blue_bucket_function(point[0], distance)
+        elif point == yellow_point:
+            yellow_bucket_function(point[0], distance)
+        else:
+            red_bucket_function(point[0], distance)
 
     cv2.imshow("Color frame", color_frame)  # Displaying webcam image
 

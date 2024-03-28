@@ -2,10 +2,22 @@ import cv2
 import numpy as np
 from realsense_depth import DepthCamera
 
+# window size
+WINDOW_SIZE = 640
+# vertical field of view of camera in degrees
+FOV = 64
+# number of pixels per degree
+PIXELS_PER_DEGREE = round(WINDOW_SIZE / FOV)
+# half of the window size
+HALF_WINDOW_SIZE = round(WINDOW_SIZE / 2)
+
 def show_distance(event, x, y, args, params):
     print(x, y)
 
 def detect_largest_color(mask, color_name, color_frame):
+    # in this case, windowHalf = 320, pixelsPerDegree = 10
+    global HALF_WINDOW_SIZE
+    global PIXELS_PER_DEGREE
     mask_contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     largest_contour = None
     largest_contour_area = 0
@@ -18,8 +30,20 @@ def detect_largest_color(mask, color_name, color_frame):
 
     if largest_contour_area > 500:
         x, y, w, h = cv2.boundingRect(largest_contour)
+        # degrees to turn = (midpoint-half of window size) / pixels per degree. round to integer. 
+        midpoint = x+(w/2)
+        degreesToTurn = round((midpoint - HALF_WINDOW_SIZE) / PIXELS_PER_DEGREE)
+        # if degreesToTurn negative, turn left. else turn right
+        direction = "L" if (degreesToTurn < 0) else "R"
+        # we only care about magnitude once we know direction
+        degreesToTurn = abs(degreesToTurn)
         cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-        cv2.putText(color_frame, color_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        # if we are within 1 degree of being centered, consider the vehicle aligned
+        if (degreesToTurn < 2):
+            name_and_message = color_name + ", " + "ALIGNED"
+        else:
+            name_and_message = color_name + ", " + direction + str(degreesToTurn)
+        cv2.putText(color_frame, name_and_message, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
         return (x + w // 2, y + h // 2)
     else:
         return None
@@ -28,7 +52,7 @@ def detect_largest_color(mask, color_name, color_frame):
 dc = DepthCamera()
 
 cv2.namedWindow("Color frame")
-cv2.setMouseCallback("Color frame", show_distance)
+# cv2.setMouseCallback("Color frame", show_distance)
 
 while True:
     ret, depth_frame, color_frame = dc.get_frame()  # Reading webcam footage

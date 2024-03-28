@@ -46,14 +46,14 @@ while True:
 
     red_point = detect_largest_color(red_mask, "Red", color_frame)
     blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
-    # yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
+    yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
 
     if red_point:
         points.append(red_point)
     if blue_point:
         points.append(blue_point)
-    # if yellow_point:
-    #     points.append(yellow_point)
+    if yellow_point:
+        points.append(yellow_point)
 
     for point in points:
         cv2.circle(color_frame, point, 4, (0, 0, 255))

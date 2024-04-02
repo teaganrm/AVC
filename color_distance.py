@@ -162,6 +162,11 @@ def blue_bucket_function(center_x, distance):
             obstacleCount += 1
             serial_port.write(MIDDLE)# realign servo in center position
             serial_port.write(FORWARD60) # return to regular 60% speed
+            if obstacleCount == 7: # check for final blue bucket 
+                while time.time() - startTime < 4: # go forward 4 seconds before stop
+                    print("going right around blue")
+                serial_port.write(NEUTRAL) # stop vehicle
+                serial_port.close() # close serial port
         else:
             message = " ALIGNED"    # if aligned but far
             serial_port.write(MIDDLE) # realign servo

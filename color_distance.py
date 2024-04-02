@@ -67,6 +67,7 @@ PIXELS_PER_DEGREE = round(WINDOW_SIZE / FOV)
 HALF_WINDOW_SIZE = round(WINDOW_SIZE / 2)
 # distance threshold in mm
 DISTANCE_THRESHOLD = 1000
+RED_DISTANCE_THRESHOLD = 2000
 # obstacle counter
 obstacleCount = 0
 
@@ -106,6 +107,33 @@ def detect_largest_color(mask, color_name, color_frame):
         cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
         cv2.putText(color_frame, color_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
         return (x + w // 2, y + h // 2)
+    else:
+        return None
+    
+def detect_two_colors(mask, color_name, color_frame):
+    mask_contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    largest_contour = None
+    largest_contour2 = None
+    largest_contour_area = 0
+    largest_contour2_area = 0
+
+    for mask_contour in mask_contours:
+        contour_area = cv2.contourArea(mask_contour)
+        if contour_area > largest_contour_area:
+            largest_contour2 = largest_contour
+            largest_contour2_area = largest_contour_area
+            largest_contour = mask_contour
+            largest_contour_area = contour_area
+
+    if largest_contour2_area > 500:
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+        cv2.putText(color_frame, color_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+
+        x2, y2, w2, h2 = cv2.boundingRect(largest_contour2)
+        cv2.rectangle(color_frame, (x2, y2), (x2 + w2, y2 + h2), (0, 0, 255), 2)
+        cv2.putText(color_frame, color_name, (x2, y2 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        return (x + w // 2, y + h // 2, x2 + w2 // 2, y2 + h2 // 2)
     else:
         return None
     
@@ -216,6 +244,7 @@ def yellow_bucket_function(center_x, distance):
 
             obstacleCount += 1 
             serial_port.write(MIDDLE) # centralize servo
+            serial_port.write(FORWARD60) # go forward 60%
 
         else:
             message = " ALIGNED"    # if aligned but far
@@ -229,11 +258,31 @@ def red_bucket_function(center_x, distance):
     aligned = course_correct(center_x)
     if (not aligned[0]):
         message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+        if aligned[1] == 'R':
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning right")
+            serial_port.write(MIDDLE)
+
+        elif aligned[1] == 'L':
+            serial_port.write(LEFT23) # turn left 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning left")
+            serial_port.write(MIDDLE)
     else:
-        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
+        if (distance < RED_DISTANCE_THRESHOLD): # if aligned and close, perform action
             message = " PERFORM ACTION"
+            serial_port.write(MIDDLE)
+            serial_port.write(FORWARD60)
+            startTime = time.time()
+            while time.time() - startTime < 4: # go forward 60% for 4 seconds
+                print("going through red buckets")
         else:
             message = " ALIGNED"    # if aligned but far, probably do nothing
+            serial_port.write(MIDDLE) # centralize servo
+            serial_port.write(FORWARD60) # go forward 60%
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
                     2)
     
@@ -270,7 +319,7 @@ while True:
         if (yellow_point):
             points.append(yellow_point)
     elif obstacleCount == 5:
-        red_point = detect_largest_color(red_mask, "Red", color_frame)
+        red_point = detect_two_colors(red_mask, "Red", color_frame)
         if (red_point):
             points.append(red_point)
 
@@ -283,7 +332,8 @@ while True:
         elif point == yellow_point:
             yellow_bucket_function(point[0], distance)
         else:
-            red_bucket_function(point[0], distance)
+            redMidpoint = (point[0] + point[2]) // 2
+            red_bucket_function(redMidpoint, distance)
 
     cv2.imshow("Color frame", color_frame)  # Displaying webcam image
 

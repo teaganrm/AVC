@@ -36,11 +36,15 @@ while True:
 
     points = []
 
-    lower_red, upper_red = np.array([168, 120, 120]), np.array([180, 255, 255])  # Red color range
-    lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
-    lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
+    lower_red1, upper_red1 = np.array([168, 100, 100]), np.array([180, 255, 255])  # Red color range
+    lower_red2, upper_red2 = np.array([0, 200, 200]), np.array([10, 255, 255])  # Red color range
+    lower_blue, upper_blue = np.array([95, 70, 70]), np.array([130, 255, 255])  # Blue color range
+    lower_yellow, upper_yellow = np.array([20, 65, 65]), np.array([40, 255, 255])  # Yellow color range
 
-    red_mask = cv2.inRange(img, lower_red, upper_red)
+    lower_red_combined = np.minimum(lower_red1, lower_red2)
+    upper_red_combined = np.maximum(upper_red1, upper_red2)
+
+    red_mask = cv2.inRange(img, lower_red_combined, upper_red_combined)
     blue_mask = cv2.inRange(img, lower_blue, upper_blue)
     yellow_mask = cv2.inRange(img, lower_yellow, upper_yellow)
 

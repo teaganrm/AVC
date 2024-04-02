@@ -1,6 +1,91 @@
 import cv2
+import keyboard
 import numpy as np
+import time
+import serial
 from realsense_depth import DepthCamera
+
+# constants
+
+# servo commands
+MIDDLE = b'z' # point wheels to middle position
+LEFT23 = b'y'
+LEFT45 = b'x'
+LEFT68 = b'w'
+LEFT90 = b'v'
+RIGHT23 = b'u'
+RIGHT45 = b't'
+RIGHT68 = b's'
+RIGHT90 = b'r'
+
+# main drive motor
+NEUTRAL = b'q'
+FORWARD12 = b'p'
+FORWARD15 = b'o'
+FORWARD20 = b'n'
+FORWARD30 = b'm'
+FORWARD40 = b'l'
+FORWARD50 = b'k'
+FORWARD60 = b'j'
+FORWARD70 = b'i'
+FORWARD80 = b'h'
+FORWARD90 =  b'g'
+FORWARD100 = b'f'
+BACKWARD12 = b'e'
+BACKWARD15 = b'd'
+BACKWARD20 = b'c'
+BACKWARD30 = b'b'
+BACKWARD40 = b'a'
+BACKWARD50 = b'A'
+BACKWARD60 = b'B'
+BACKWARD70 = b'C'
+BACKWARD80 = b'D'
+BACKWARD90 =  b'E'
+BACKWARD100 = b'F'
+
+'''
+serial port should be initialized at the start
+of course and closed at the end of course
+'''
+serial_port = serial.Serial(
+    port="/dev/ttyTHS1",
+    baudrate=115200,
+    bytesize=serial.EIGHTBITS,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_ONE, )
+
+# allow port to initialize
+time.sleep(1)
+
+# window size
+WINDOW_SIZE = 640
+# vertical field of view of camera in degrees
+FOV = 64
+# number of pixels per degree
+PIXELS_PER_DEGREE = round(WINDOW_SIZE / FOV)
+# half of the window size
+HALF_WINDOW_SIZE = round(WINDOW_SIZE / 2)
+# distance threshold in mm
+DISTANCE_THRESHOLD = 1000
+# obstacle counter
+obstacleCount = 0
+
+# keyboard event callback to increment obstacle counter
+def on_key_event(event):
+    global obstacleCount
+    if (event.event_type == keyboard.KEY_DOWN):
+        obstacleCount+=1
+        if obstacleCount in [0, 2, 4, 6]:
+            print("Looking for blues")
+        elif obstacleCount in [1, 3]:
+            print("Looking for yellows")
+        elif obstacleCount == 5:
+            print("Looking for reds")
+        else:
+            print("No more obstacles.")
+            return
+        print("Count:", obstacleCount)
+
 
 def show_distance(event, x, y, args, params):
     print(x, y)
@@ -24,103 +109,177 @@ def detect_largest_color(mask, color_name, color_frame):
     else:
         return None
     
-def course_correct(point, center_x):
-    print("course correct")
-    # check if the detected point is not in the center of the page with a threshold of 15 pixels
-    while (point[0] <= center_x-15) or (point[0] >= center_x+15):
-        #check if bucket is to the right or left of center and adjust
-        if point[0] >= center_x:
-            print("turn right") # put uart command here
-        if point[0] <= center_x:
-            print("turn left") # put uart command here
+def course_correct(center_x):
+    # in this case, windowHalf = 320, pixelsPerDegree = 10
+    global HALF_WINDOW_SIZE
+    global PIXELS_PER_DEGREE
+    # degrees to turn = (midpoint-half of window size) / pixels per degree. round to integer. 
+    degreesToTurn = round((center_x - HALF_WINDOW_SIZE) / PIXELS_PER_DEGREE)
+    # if degreesToTurn negative, turn left. else turn right
+    direction = 'L' if (degreesToTurn < 0) else 'R'
+    # we only care about magnitude once we know direction
+    degreesToTurn = abs(degreesToTurn)
+    # if we are within 5 degrees of being centered, consider the vehicle aligned
+    # return value: aligned, direction, degreesToTurn
+    if (degreesToTurn < 5):
+        return (True, '', 0)
+    else:
+        return (False, direction, str(degreesToTurn))
     
-def blue_bucket_function(point, center_x, distance):
-    print("blue test")
-    course_correct(point, center_x)
-    
-    while distance > 1:
-        print("go forward") # put uart command here
+# each color function will print distance and message above center point
+def blue_bucket_function(center_x, distance):
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+        if aligned[1] == 'R':
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning right")
+            serial_port.write(MIDDLE)
 
-    print("stop") # put uart command here
-    print("turn left") # put uart command here
-    print("go forward 2 meters") # put uart command here
-    print("turn right") # put uart command here
-    print("go forward until next obstacle") # put uart command here
+        elif aligned[1] == 'L':
+            serial_port.write(LEFT23) # turn left 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning left")
+            serial_port.write(MIDDLE)
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
 
+            serial_port.write(FORWARD30)
+            serial_port.write(LEFT45)
+            startTime = time.time()
+            while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% left)
+                print("going left around blue")
+            
+            serial_port.write(RIGHT23)
+            startTime = time.time()
+            while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% right)
+                print("going right around blue")
 
-def yellow_bucket_function(point, center_x, distance):
-    print("yellow test")
-    course_correct(point, center_x)
+            obstacleCount += 1
+            serial_port.write(MIDDLE)# realign servo in center position
+            serial_port.write(FORWARD60) # return to regular 60% speed
+        else:
+            message = " ALIGNED"    # if aligned but far
+            serial_port.write(MIDDLE) # realign servo
+            serial_port.write(FORWARD60) # go forward 60%
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
 
-    while distance > 1:
-        print("go forward") # put uart command here
+def yellow_bucket_function(center_x, distance):
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+        if aligned[1] == 'R':
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning right")
+            serial_port.write(MIDDLE)
 
-    print("stop") # put uart command here
-    print("turn left") # put uart command here
-    print("go forward 2 meters") # put uart command here
-    print("turn right") # put uart command here
-    print("go forward until next obstacle") # put uart command here
+        elif aligned[1] == 'L':
+            serial_port.write(LEFT23) # turn left 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning left")
+            serial_port.write(MIDDLE)
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
 
-def red_bucket_function(point, center_x, distance):
-    print("red test")
-    course_correct(point, center_x)
-    print("go forward") # put uart command here
+            if obstacleCount == 3: # ramp action
+                serial_port.write(FORWARD60)
+                serial_port.write(MIDDLE)
+                startTime = time.time()
+                while time.time() - startTime < 4: # go forward 60% for 4 seconds
+                    print("going over ramp")
 
+            else:
+                serial_port.write(FORWARD30)
+                serial_port.write(RIGHT45)
+                startTime = time.time()
+                while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% right)
+                    print("going right around yellow bucket")
+            
+                serial_port.write(LEFT23)
+                startTime = time.time()
+                while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% left)
+                    print("going left around yellow bucket")
+
+            obstacleCount += 1 
+            serial_port.write(MIDDLE) # centralize servo
+
+        else:
+            message = " ALIGNED"    # if aligned but far
+            serial_port.write(MIDDLE) # centralize servo
+            serial_port.write(FORWARD60) # go forward 60%
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
+
+def red_bucket_function(center_x, distance):
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
+            message = " PERFORM ACTION"
+        else:
+            message = " ALIGNED"    # if aligned but far, probably do nothing
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
     
 # Capturing webcam footage
 dc = DepthCamera()
 
 cv2.namedWindow("Color frame")
-cv2.setMouseCallback("Color frame", show_distance)
+# cv2.setMouseCallback("Color frame", show_distance)
+
+# Create color ranges
+lower_red, upper_red = np.array([168, 120, 120]), np.array([180, 255, 255])  # Red color range
+lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
+lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
+
+keyboard.on_press(on_key_event)
 
 while True:
     ret, depth_frame, color_frame = dc.get_frame()  # Reading webcam footage
     img = cv2.cvtColor(color_frame, cv2.COLOR_BGR2HSV)  # Converting BGR image to HSV format
 
-    # calculate center of image for course correction
-    height, width, _ = img.shape
-    center_x = width // 2
-
     points = []
-
-    lower_red, upper_red = np.array([168, 120, 120]), np.array([180, 255, 255])  # Red color range
-    lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
-    lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
 
     red_mask = cv2.inRange(img, lower_red, upper_red)
     blue_mask = cv2.inRange(img, lower_blue, upper_blue)
     yellow_mask = cv2.inRange(img, lower_yellow, upper_yellow)
 
-    red_point = detect_largest_color(red_mask, "Red", color_frame)
-    blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
-    yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
+    # read only certain color depending on obstacle counter
+    if obstacleCount in [0, 2, 4, 6]:
+        blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
+        if (blue_point):
+            points.append(blue_point)
+    elif obstacleCount in [1, 3]:
+        yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
+        if (yellow_point):
+            points.append(yellow_point)
+    elif obstacleCount == 5:
+        red_point = detect_largest_color(red_mask, "Red", color_frame)
+        if (red_point):
+            points.append(red_point)
 
-    if red_point:
-        points.append(red_point)
-    if blue_point:
-        points.append(blue_point)
-    if yellow_point:
-         points.append(yellow_point)
-
+    # for each point call its respective function
     for point in points:
         cv2.circle(color_frame, point, 4, (0, 0, 255))
         distance = depth_frame[point[1], point[0]]
-        cv2.putText(color_frame, "{}mm".format(distance), (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
-                    2)
+        if point == blue_point:
+            blue_bucket_function(point[0], distance)
+        elif point == yellow_point:
+            yellow_bucket_function(point[0], distance)
+        else:
+            red_bucket_function(point[0], distance)
 
     cv2.imshow("Color frame", color_frame)  # Displaying webcam image
 
-    # check which color is being detected and call appropriate function
-    for point in points:
-        distance = depth_frame[point[1], point[0]]
-        if point == blue_point:
-            blue_bucket_function(point, center_x, distance)
-        if point == yellow_point:
-            yellow_bucket_function(point, center_x, distance)
-        if point == red_point:
-            red_bucket_function(point, center_x, distance)
-
-
     cv2.waitKey(1)
-
-

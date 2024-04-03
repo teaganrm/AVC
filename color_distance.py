@@ -187,6 +187,8 @@ def blue_bucket_function(center_x, distance):
             if obstacleCount == 7: # check for final blue bucket 
                 while time.time() - startTime < 4: # go forward 4 seconds before stop
                     print("going right around blue")
+                # increment obstacleCount one last time. this should fail while loop, exit program
+                obstacleCount += 1
                 print("uart statment for stopping") # go forward 60%
                 print("uart statment for diconnecting port") # go forward 60%
         else:
@@ -299,8 +301,7 @@ lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  #
 
 keyboard.on_press(on_key_event)
 
-# in blue bucket function once it detects oc == 7 and 4 seconds pass
-# increment oc to 8
+# blue bucket function increments obstacleCount to 8
 while (obstacleCount < 8):
     ret, depth_frame, color_frame = dc.get_frame()  # Reading webcam footage
     img = cv2.cvtColor(color_frame, cv2.COLOR_BGR2HSV)  # Converting BGR image to HSV format

@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import serial
+import time
 from realsense_depth import DepthCamera
 
 def show_distance(event, x, y, args, params):
@@ -54,13 +56,17 @@ while True:
 
     if red_point:
         points.append(red_point)
-    if blue_point:
+    elif blue_point:
         points.append(blue_point)
-    if yellow_point:
+    elif yellow_point:
         points.append(yellow_point)
+    else: 
+        points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
 
     for point in points:
         cv2.circle(color_frame, point, 4, (0, 0, 255))
+        cv2.putText(color_frame, "point", (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
 
     cv2.imshow("Color frame", color_frame)  # Displaying webcam image
 

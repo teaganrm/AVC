@@ -47,6 +47,12 @@ BACKWARD100 = b'F'
 serial port should be initialized at the start
 of course and closed at the end of course
 '''
+serial_port = serial.Serial(
+    port="/dev/ttyTHS1",
+    baudrate=115200,
+    bytesize=serial.EIGHTBITS,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_ONE, )
 
 # allow port to initialize
 time.sleep(1)
@@ -61,9 +67,21 @@ PIXELS_PER_DEGREE = round(WINDOW_SIZE / FOV)
 HALF_WINDOW_SIZE = round(WINDOW_SIZE / 2)
 # distance threshold in mm
 DISTANCE_THRESHOLD = 1000
+#distance threshold for red buckets 
 RED_DISTANCE_THRESHOLD = 2000
 # obstacle counter
 obstacleCount = 0
+# current speed
+speed_var = 0
+# list of all speeds
+all_speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50, FORWARD60]
+# indices to map to all_speeds
+all_indices = [12, 15, 20, 30, 40, 50, 60]
+
+
+#call neutral to set commands 
+serial_port.write(NEUTRAL) #DO NOT REMOVE
+time.sleep(5) #DO NOT REMOVE
 
 # keyboard event callback to increment obstacle counter
 def on_key_event(event):
@@ -78,6 +96,7 @@ def on_key_event(event):
             print("Looking for reds")
         else:
             print("No more obstacles.")
+            return
         print("Count:", obstacleCount)
 
 
@@ -129,6 +148,42 @@ def detect_two_colors(mask, color_name, color_frame):
         return (x + w // 2, y + h // 2, x2 + w2 // 2, y2 + h2 // 2)
     else:
         return None
+
+def ramp_speed(targetSpeed):
+    global speed_var
+    global all_speeds
+    global all_indices
+    
+    # if targetSpeed == 20:
+    #     speeds = [FORWARD12, FORWARD15, FORWARD20]
+    #     speed_var = 20
+    # elif targetSpeed == 30:
+    #     speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30]
+    #     speed_var = 30
+    # elif targetSpeed == 40: #add 25
+    #     speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40]
+    #     speed_var = 40
+    # elif targetSpeed == 50: #add 25, 45
+    #     speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50]
+    #     speed_var = 50
+    # elif targetSpeed == 60: #add 25, 45, 55
+    #     speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50, FORWARD60]
+    #     speed_var = 60
+    currentIndex = 0;
+    targetIndex = 0;
+    # find current and target speeds and set indices
+    for x in range(len(all_indices)):
+        if (speed_var == all_indices[x]):
+            currentIndex = x
+        if (targetSpeed == all_indices[x]):
+            targetIndex = x
+    
+	# only call UART commands within indices
+    speeds = all_speeds[currentIndex, targetIndex+1]
+
+    for s in speeds:
+        serial_port.write(s)
+        time.sleep(0.2)
     
 def course_correct(center_x):
     # in this case, windowHalf = 320, pixelsPerDegree = 10
@@ -150,103 +205,107 @@ def course_correct(center_x):
 # each color function will print distance and message above center point
 def blue_bucket_function(center_x, distance):
     # always check to see if we're aligned
-    message = ""
     aligned = course_correct(center_x)
     if (not aligned[0]):
         message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
         if aligned[1] == 'R':
-            print("uart statement for turning right 23")
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
             startTime = time.time()
             while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
                 print("aligning right")
-            print("uart statement for centering servo")
+            serial_port.write(MIDDLE)
 
         elif aligned[1] == 'L':
-            print("uart statement for turning left 23")
+            serial_port.write(LEFT23) # turn left 23 degrees to align
             startTime = time.time()
             while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
                 print("aligning left")
-            print("uart statement for centering servo")
+            serial_port.write(MIDDLE)
     else:
         if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
-            global obstacleCount
-            print("uart statment for going forward 30%") # go forward 60%
-            print("uart statment for turning left 45 degrees") # go forward 60%
+            if speed_var >= 30:
+                serial_port.write(FORWARD30)
+                speed_var = 30
+            else:
+                ramp_speed(30)
+            serial_port.write(LEFT45)
             startTime = time.time()
-            while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% left)
+            while time.time() - startTime < 1: # go forward 30% for 1 seconds (45% left)
                 print("going left around blue")
             
-            print("uart statment for turning right 23") # go forward 60%
+            serial_port.write(RIGHT23)
             startTime = time.time()
             while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% right)
                 print("going right around blue")
 
             obstacleCount += 1
-            print("uart statement for centering servo")# realign servo in center position
-            print("uart statment for going forward 60%") # go forward 60%
+            serial_port.write(MIDDLE)# realign servo in center position
+            ramp_speed(60) # return to regular 60% speed
             if obstacleCount == 7: # check for final blue bucket 
                 while time.time() - startTime < 4: # go forward 4 seconds before stop
                     print("going right around blue")
-                # increment obstacleCount one last time. this should fail while loop, exit program
-                obstacleCount += 1
-                print("uart statment for stopping") # go forward 60%
-                print("uart statment for diconnecting port") # go forward 60%
+                serial_port.write(NEUTRAL) # stop vehicle
+                speed_var = 0 #sets speed variable to 0
+                serial_port.close() # close serial port
         else:
             message = " ALIGNED"    # if aligned but far
-            print("uart statement for centering servo") # realign servo
-            print("uart statment for going forward 60%") # go forward 60%
+            serial_port.write(MIDDLE) # realign servo
+            ramp_speed(60)
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
                     2)
 
 def yellow_bucket_function(center_x, distance):
     # always check to see if we're aligned
-    message = ""
     aligned = course_correct(center_x)
     if (not aligned[0]):
         message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
         if aligned[1] == 'R':
-            print("uart statment for turning right 23") # turn right 23 degrees to align
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
             startTime = time.time()
             while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
                 print("aligning right")
-            print("uart statement for centering servo")
+            serial_port.write(MIDDLE)
 
         elif aligned[1] == 'L':
-            print("uart statment for turning left 23") 
+            serial_port.write(LEFT23) # turn left 23 degrees to align
             startTime = time.time()
             while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
                 print("aligning left")
-            print("uart statement for centering servo")
+            serial_port.write(MIDDLE)
     else:
         if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
-            global obstacleCount
+
             if obstacleCount == 3: # ramp action
-                print("uart statment for going forward 60%") # go forward 60%
-                print("uart statement for centering servo")
+                serial_port.write(MIDDLE)
+                ramp_speed(60)
                 startTime = time.time()
                 while time.time() - startTime < 4: # go forward 60% for 4 seconds
                     print("going over ramp")
 
             else:
-                print("uart statment for going forward 30%") # go forward 30%
-                print("uart statment for turning right 45 degrees") # turn right 45 degrees
+                if speed_var >= 30:
+                    serial_port.write(FORWARD30)
+                    speed_var = 30
+                else:
+                    ramp_speed(30)
+                serial_port.write(RIGHT45)
                 startTime = time.time()
                 while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% right)
                     print("going right around yellow bucket")
             
-                print("uart statment for turning left 23") # go forward 60%
+                serial_port.write(LEFT23)
                 startTime = time.time()
                 while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% left)
                     print("going left around yellow bucket")
 
             obstacleCount += 1 
-            print("uart statement for centering servo")
-            print("uart statment for going forward 60%") # go forward 60%
+            serial_port.write(MIDDLE) # centralize servo
+            ramp_speed(60) # go forward 60%
 
         else:
             message = " ALIGNED"    # if aligned but far
-            print("uart statement for centering servo")
-            print("uart statment for going forward 60%") # go forward 60%
+            serial_port.write(MIDDLE) # centralize servo
+            ramp_speed(60) # go forward 60%
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
                     2)
 
@@ -256,35 +315,34 @@ def red_bucket_function(center_x, distance):
     if (not aligned[0]):
         message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
         if aligned[1] == 'R':
-            print("uart statment for turning right 23") # turn right 23 degrees to align
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
             startTime = time.time()
             while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
                 print("aligning right")
-            print("uart statement for centering servo")
+            serial_port.write(MIDDLE)
 
         elif aligned[1] == 'L':
-            print("uart statment for turning left 23") # turn left 23 degrees to align
+            serial_port.write(LEFT23) # turn left 23 degrees to align
             startTime = time.time()
             while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
                 print("aligning left")
-            print("uart statement for centering servo")
+            serial_port.write(MIDDLE)
     else:
         if (distance < RED_DISTANCE_THRESHOLD): # if aligned and close, perform action
-            global obstacleCount
             message = " PERFORM ACTION"
-            print("uart statement for centering servo")
-            print("uart statment for going forward 60%")
+            serial_port.write(MIDDLE)
+            if speed_var >= 30:
+                serial_port.write(FORWARD30)
+                speed_var = 30
+            else:
+                ramp_speed(30)
             startTime = time.time()
             while time.time() - startTime < 4: # go forward 60% for 4 seconds
                 print("going through red buckets")
-
-            obstacleCount += 1 
-            print("uart statement for centering servo")
-            print("uart statment for going forward 60%") # go forward 60%
         else:
             message = " ALIGNED"    # if aligned but far, probably do nothing
-            print("uart statement for centering servo") # centralize servo
-            print("uart statment for going forward 60%") # go forward 60%
+            serial_port.write(MIDDLE) # centralize servo
+            ramp_speed(60) # go forward 60%
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
                     2)
     
@@ -301,8 +359,9 @@ lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  #
 
 keyboard.on_press(on_key_event)
 
-# blue bucket function increments obstacleCount to 8
-while (obstacleCount < 8):
+ramp_speed(30)
+
+while True:
     ret, depth_frame, color_frame = dc.get_frame()  # Reading webcam footage
     img = cv2.cvtColor(color_frame, cv2.COLOR_BGR2HSV)  # Converting BGR image to HSV format
 
@@ -317,39 +376,34 @@ while (obstacleCount < 8):
         blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
         if (blue_point):
             points.append(blue_point)
+        else: 
+            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
     elif obstacleCount in [1, 3]:
         yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
         if (yellow_point):
             points.append(yellow_point)
+        else: 
+            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
     elif obstacleCount == 5:
         red_point = detect_two_colors(red_mask, "Red", color_frame)
-        # only append red point if it found two red objects
         if (red_point):
             points.append(red_point)
+        else:
+            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
 
     # for each point call its respective function
     for point in points:
+        cv2.circle(color_frame, point, 4, (0, 0, 255))
+        distance = depth_frame[point[1], point[0]]
         if point == blue_point:
-            cv2.circle(color_frame, point, 4, (0, 0, 255))
-            distance = depth_frame[point[1], point[0]]
             blue_bucket_function(point[0], distance)
         elif point == yellow_point:
-            cv2.circle(color_frame, point, 4, (0, 0, 255))
-            distance = depth_frame[point[1], point[0]]
             yellow_bucket_function(point[0], distance)
-        else:
-            # draw midpoint of both bounding boxes
-            firstObject = tuple((point[0], point[1]))
-            secondObject = tuple((point[2], point[3]))
-            cv2.circle(color_frame, firstObject, 4, (0, 0, 255))
-            cv2.circle(color_frame, secondObject, 4, (0, 0, 255))
-            # only care about distance to 1 of them
-            distance = depth_frame[point[1], point[0]]
+        elif point == red_point:
             redMidpoint = (point[0] + point[2]) // 2
             red_bucket_function(redMidpoint, distance)
+
 
     cv2.imshow("Color frame", color_frame)  # Displaying webcam image
 
     cv2.waitKey(1)
-
-print("Obstacle course complete.")

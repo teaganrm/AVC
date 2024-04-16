@@ -1,5 +1,4 @@
 import cv2
-import keyboard
 import numpy as np
 import time
 import serial
@@ -82,20 +81,6 @@ all_indices = [12, 15, 20, 30, 40, 50, 60]
 #call neutral to set commands 
 serial_port.write(NEUTRAL) #DO NOT REMOVE
 time.sleep(5) #DO NOT REMOVE
-
-# keyboard event callback to increment obstacle counter
-def on_key_event(event):
-    global obstacleCount
-    if (event.event_type == keyboard.KEY_DOWN):
-        obstacleCount+=1
-        if obstacleCount in [0]:
-            print("Looking for blues")
-        elif obstacleCount in [1]:
-            print("Looking for yellows")
-        else:
-            print("No more obstacles.")
-            return
-        print("Count:", obstacleCount)
 
 def show_distance(event, x, y, args, params):
     print(x, y)
@@ -277,8 +262,6 @@ cv2.namedWindow("Color frame")
 # Create color ranges
 lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
 lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
-
-keyboard.on_press(on_key_event)
 
 ramp_speed(30)
 

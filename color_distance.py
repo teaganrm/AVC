@@ -169,6 +169,10 @@ def ramp_speed(targetSpeed):
     # elif targetSpeed == 60: #add 25, 45, 55
     #     speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50, FORWARD60]
     #     speed_var = 60
+    
+    # only ramp if current speed < target speed
+    if (speed_var >= targetSpeed):
+        return
     currentIndex = 0;
     targetIndex = 0;
     # find current and target speeds and set indices
@@ -178,12 +182,15 @@ def ramp_speed(targetSpeed):
         if (targetSpeed == all_indices[x]):
             targetIndex = x
     
+    
 	# only call UART commands within indices
     speeds = all_speeds[currentIndex, targetIndex+1]
-
     for s in speeds:
         serial_port.write(s)
         time.sleep(0.2)
+    
+	# set speed_var to target speed
+    speed_var = targetSpeed
     
 def course_correct(center_x):
     # in this case, windowHalf = 320, pixelsPerDegree = 10
@@ -204,6 +211,7 @@ def course_correct(center_x):
     
 # each color function will print distance and message above center point
 def blue_bucket_function(center_x, distance):
+    global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
     if (not aligned[0]):
@@ -255,6 +263,7 @@ def blue_bucket_function(center_x, distance):
                     2)
 
 def yellow_bucket_function(center_x, distance):
+    global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
     if (not aligned[0]):
@@ -310,6 +319,7 @@ def yellow_bucket_function(center_x, distance):
                     2)
 
 def red_bucket_function(center_x, distance):
+    global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
     if (not aligned[0]):

@@ -71,8 +71,13 @@ DISTANCE_THRESHOLD = 1000
 RED_DISTANCE_THRESHOLD = 2000
 # obstacle counter
 obstacleCount = 0
-# speed variable 
+# current speed
 speed_var = 0
+# list of all speeds
+all_speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50, FORWARD60]
+# indices to map to all_speeds
+all_indices = [12, 15, 20, 30, 40, 50, 60]
+
 
 #call neutral to set commands 
 serial_port.write(NEUTRAL) #DO NOT REMOVE
@@ -85,8 +90,10 @@ def on_key_event(event):
         obstacleCount+=1
         if obstacleCount in [0, 2, 4, 6]:
             print("Looking for blues")
-        elif obstacleCount in [1, 3]:
+        elif obstacleCount in 1:
             print("Looking for yellows")
+        elif obstacleCount in 3:
+            print("looking for ramp")
         elif obstacleCount == 5:
             print("Looking for reds")
         else:
@@ -144,26 +151,32 @@ def detect_two_colors(mask, color_name, color_frame):
     else:
         return None
 
-def ramp_speed(speed):
-    if speed == 20:
-        speeds = [FORWARD12, FORWARD15, FORWARD20]
-        speed_var = 20
-    elif speed == 30:
-        speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30]
-        speed_var = 30
-    elif speed == 40: #add 25
-        speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40]
-        speed_var = 40
-    elif speed == 50: #add 25, 45
-        speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50]
-        speed_var = 50
-    elif speed == 60: #add 25, 45, 55
-        speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50, FORWARD60]
-        speed_var = 60
-
+def ramp_speed(targetSpeed):
+    global speed_var
+    global all_speeds
+    global all_indices
+    
+    # only ramp if current speed < target speed
+    if (speed_var >= targetSpeed):
+        return
+    currentIndex = 0
+    targetIndex = 0
+    # find current and target speeds and set indices
+    for x in range(len(all_indices)):
+        if (speed_var == all_indices[x]):
+            currentIndex = x
+        if (targetSpeed == all_indices[x]):
+            targetIndex = x
+    
+    
+	# only call UART commands within indices
+    speeds = all_speeds[currentIndex, targetIndex+1]
     for s in speeds:
         serial_port.write(s)
         time.sleep(0.2)
+    
+	# set speed_var to target speed
+    speed_var = targetSpeed
     
 def course_correct(center_x):
     # in this case, windowHalf = 320, pixelsPerDegree = 10
@@ -184,6 +197,7 @@ def course_correct(center_x):
     
 # each color function will print distance and message above center point
 def blue_bucket_function(center_x, distance):
+    global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
     if (not aligned[0]):
@@ -203,11 +217,7 @@ def blue_bucket_function(center_x, distance):
             serial_port.write(MIDDLE)
     else:
         if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
-            if speed_var >= 30:
-                serial_port.write(FORWARD30)
-                speed_var = 30
-            else:
-                ramp_speed(30)
+            ramp_speed(30)
             serial_port.write(LEFT45)
             startTime = time.time()
             while time.time() - startTime < 1: # go forward 30% for 1 seconds (45% left)
@@ -235,6 +245,7 @@ def blue_bucket_function(center_x, distance):
                     2)
 
 def yellow_bucket_function(center_x, distance):
+    global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
     if (not aligned[0]):
@@ -254,28 +265,15 @@ def yellow_bucket_function(center_x, distance):
             serial_port.write(MIDDLE)
     else:
         if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
-
-            if obstacleCount == 3: # ramp action
-                serial_port.write(MIDDLE)
-                ramp_speed(60)
-                startTime = time.time()
-                while time.time() - startTime < 4: # go forward 60% for 4 seconds
-                    print("going over ramp")
-
-            else:
-                if speed_var >= 30:
-                    serial_port.write(FORWARD30)
-                    speed_var = 30
-                else:
-                    ramp_speed(30)
-                serial_port.write(RIGHT45)
-                startTime = time.time()
-                while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% right)
-                    print("going right around yellow bucket")
+            ramp_speed(30)
+            serial_port.write(RIGHT45)
+            startTime = time.time()
+            while time.time() - startTime < 1: # go forward 30% for 0.5 seconds (45% right)
+                print("going right around yellow bucket")
             
-                serial_port.write(LEFT23)
-                startTime = time.time()
-                while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% left)
+            serial_port.write(LEFT23)
+            startTime = time.time()
+            while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% left)
                     print("going left around yellow bucket")
 
             obstacleCount += 1 
@@ -290,6 +288,7 @@ def yellow_bucket_function(center_x, distance):
                     2)
 
 def red_bucket_function(center_x, distance):
+    global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
     if (not aligned[0]):
@@ -311,16 +310,50 @@ def red_bucket_function(center_x, distance):
         if (distance < RED_DISTANCE_THRESHOLD): # if aligned and close, perform action
             message = " PERFORM ACTION"
             serial_port.write(MIDDLE)
-            if speed_var >= 30:
-                serial_port.write(FORWARD30)
-                speed_var = 30
-            else:
-                ramp_speed(30)
+            ramp_speed(30)
             startTime = time.time()
             while time.time() - startTime < 4: # go forward 60% for 4 seconds
                 print("going through red buckets")
         else:
             message = " ALIGNED"    # if aligned but far, probably do nothing
+            serial_port.write(MIDDLE) # centralize servo
+            ramp_speed(60) # go forward 60%
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
+
+def wood_bucket_function(center_x, distance):
+    global speed_var
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+        if aligned[1] == 'R':
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning right")
+            serial_port.write(MIDDLE)
+
+        elif aligned[1] == 'L':
+            serial_port.write(LEFT23) # turn left 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning left")
+            serial_port.write(MIDDLE)
+    else:
+        if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
+            serial_port.write(MIDDLE)
+            ramp_speed(60)
+            startTime = time.time()
+            while time.time() - startTime < 4: # go forward 60% for 4 seconds
+                print("going over ramp")
+            
+            obstacleCount += 1 
+            serial_port.write(MIDDLE) # centralize servo
+            ramp_speed(60) # go forward 60%
+
+        else:
+            message = " ALIGNED"    # if aligned but far
             serial_port.write(MIDDLE) # centralize servo
             ramp_speed(60) # go forward 60%
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
@@ -333,9 +366,14 @@ cv2.namedWindow("Color frame")
 # cv2.setMouseCallback("Color frame", show_distance)
 
 # Create color ranges
-lower_red, upper_red = np.array([168, 120, 120]), np.array([180, 255, 255])  # Red color range
-lower_blue, upper_blue = np.array([100, 50, 50]), np.array([130, 255, 255])  # Blue color range
-lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  # Yellow color range
+lower_red1, upper_red1 = np.array([0, 100, 100]), np.array([10, 255, 255])  # Red color range
+lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([180, 255, 255])  # Red color range
+lower_blue, upper_blue = np.array([95, 70, 70]), np.array([130, 255, 255])  # Blue color range
+lower_yellow, upper_yellow = np.array([20, 100, 100]), np.array([40, 255, 255])  # Yellow color range
+lower_wood, upper_wood = np.array([12, 50, 100]), np.array([40, 200, 200]) # Wood color range
+
+lower_red_combined = np.minimum(lower_red1, lower_red2)
+upper_red_combined = np.maximum(upper_red1, upper_red2)
 
 keyboard.on_press(on_key_event)
 
@@ -347,9 +385,10 @@ while True:
 
     points = []
 
-    red_mask = cv2.inRange(img, lower_red, upper_red)
+    red_mask = cv2.inRange(img, lower_red_combined, upper_red_combined)
     blue_mask = cv2.inRange(img, lower_blue, upper_blue)
     yellow_mask = cv2.inRange(img, lower_yellow, upper_yellow)
+    wood_mask = cv2.inRange(img, lower_wood, upper_wood)
 
     # read only certain color depending on obstacle counter
     if obstacleCount in [0, 2, 4, 6]:
@@ -358,10 +397,16 @@ while True:
             points.append(blue_point)
         else: 
             points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
-    elif obstacleCount in [1, 3]:
+    elif obstacleCount in 1:
         yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
         if (yellow_point):
             points.append(yellow_point)
+        else: 
+            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
+    elif obstacleCount in 3:
+        wood_point = detect_largest_color(wood_mask, "Wood", color_frame)
+        if (wood_point):
+            points.append(wood_point)
         else: 
             points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
     elif obstacleCount == 5:

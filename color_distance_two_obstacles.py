@@ -22,10 +22,15 @@ NEUTRAL = b'q'
 FORWARD12 = b'p'
 FORWARD15 = b'o'
 FORWARD20 = b'n'
+FORWARD25 = b'H'
 FORWARD30 = b'm'
+FORWARD35 = b'I'
 FORWARD40 = b'l'
+FORWARD45 = b'J'
 FORWARD50 = b'k'
+FORWARD55 = b'K'
 FORWARD60 = b'j'
+FORWARD65 = b'L'
 FORWARD70 = b'i'
 FORWARD80 = b'h'
 FORWARD90 =  b'g'
@@ -73,10 +78,9 @@ obstacleCount = 0
 # current speed
 speed_var = 0
 # list of all speeds
-all_speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD30, FORWARD40, FORWARD50, FORWARD60]
+all_speeds = [FORWARD12, FORWARD15, FORWARD20, FORWARD25, FORWARD30, FORWARD35, FORWARD40, FORWARD45, FORWARD50, FORWARD55, FORWARD60]
 # indices to map to all_speeds
-all_indices = [12, 15, 20, 30, 40, 50, 60]
-
+all_indices = [12, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
 
 #call neutral to set commands 
 serial_port.write(NEUTRAL) #DO NOT REMOVE

@@ -103,7 +103,7 @@ def detect_largest_color(mask, color_name, color_frame):
         return (x + w // 2, y + h // 2)
     else:
         return None
-    
+
 def ramp_speed(targetSpeed):
     global speed_var
     global all_speeds
@@ -121,9 +121,8 @@ def ramp_speed(targetSpeed):
         if (targetSpeed == all_indices[x]):
             targetIndex = x
     
-    
     # only call UART commands within indices
-    speeds = all_speeds[currentIndex, targetIndex+1]
+    speeds = all_speeds[currentIndex:targetIndex+1]
     for s in speeds:
         serial_port.write(s)
         time.sleep(0.2)
@@ -152,6 +151,7 @@ def course_correct(center_x):
 def blue_bucket_function(center_x, distance):
     global speed_var
     # always check to see if we're aligned
+    message = ""
     aligned = course_correct(center_x)
     if (not aligned[0]):
         message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
@@ -198,6 +198,7 @@ def blue_bucket_function(center_x, distance):
 def yellow_bucket_function(center_x, distance):
     global speed_var
     # always check to see if we're aligned
+    message = ""
     aligned = course_correct(center_x)
     if (not aligned[0]):
         message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
@@ -216,34 +217,29 @@ def yellow_bucket_function(center_x, distance):
             serial_port.write(MIDDLE)
     else:
         if (distance < DISTANCE_THRESHOLD): # if aligned and close, perform action
-
-            if obstacleCount == 3: # ramp action
-                serial_port.write(MIDDLE)
-                ramp_speed(60)
-                startTime = time.time()
-                while time.time() - startTime < 4: # go forward 60% for 4 seconds
-                    print("going over ramp")
-
+            if speed_var >= 30:
+                serial_port.write(FORWARD30)
+                speed_var = 30
             else:
-                if speed_var >= 30:
-                    serial_port.write(FORWARD30)
-                    speed_var = 30
-                else:
-                    ramp_speed(30)
-                serial_port.write(RIGHT45)
-                startTime = time.time()
-                while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% right)
-                    print("going right around yellow bucket")
-            
-                serial_port.write(LEFT23)
-                startTime = time.time()
-                while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% left)
-                    print("going left around yellow bucket")
+                ramp_speed(30)
+            serial_port.write(RIGHT45)
+            startTime = time.time()
+            while time.time() - startTime < 0.5: # go forward 30% for 0.5 seconds (45% right)
+                print("going right around yellow bucket")
+        
+            serial_port.write(LEFT23)
+            startTime = time.time()
+            while time.time() - startTime < 2: # go forward 30% for 2 seconds (23% left)
+                print("going left around yellow bucket")
+            print("realigning servo center")
+            serial_port.write(MIDDLE)
 
             obstacleCount += 1
-            while time.time() - startTime < 4: # go forward 2 seconds before stop
+            startTime = time.time()
+            while time.time() - startTime < 2: # go forward 2 seconds before stop
                print("stopping soon")
             serial_port.write(NEUTRAL) # stop vehicle
+            print("stopped")
             speed_var = 0 #sets speed variable to 0
             serial_port.close() # close serial port
 
@@ -253,7 +249,7 @@ def yellow_bucket_function(center_x, distance):
             ramp_speed(60) # go forward 60%
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
                     2)
-    
+
 # Capturing webcam footage
 dc = DepthCamera()
 
@@ -265,7 +261,7 @@ lower_yellow, upper_yellow = np.array([10, 50, 50]), np.array([30, 255, 255])  #
 
 ramp_speed(30)
 
-while True:
+while obstacleCount < 3:
     ret, depth_frame, color_frame = dc.get_frame()  # Reading webcam footage
     img = cv2.cvtColor(color_frame, cv2.COLOR_BGR2HSV)  # Converting BGR image to HSV format
 
@@ -279,14 +275,10 @@ while True:
         blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
         if (blue_point):
             points.append(blue_point)
-        else: 
-            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
     elif obstacleCount in [1]:
         yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
         if (yellow_point):
             points.append(yellow_point)
-        else: 
-            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
 
     # for each point call its respective function
     for point in points:
@@ -296,7 +288,6 @@ while True:
             blue_bucket_function(point[0], distance)
         elif point == yellow_point:
             yellow_bucket_function(point[0], distance)
-
 
     cv2.imshow("Color frame", color_frame)  # Displaying webcam image
 

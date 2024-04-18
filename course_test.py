@@ -367,7 +367,7 @@ while True:
         if point == blue_point:
             blue_bucket_function(point[0], distance)
         elif point == wood_point:
-            yellow_bucket_function(point[0], distance)
+            wood_bucket_function(point[0], distance)
         elif point == red_point:
             redMidpoint = (point[0] + point[2]) // 2
             red_bucket_function(redMidpoint, distance)

@@ -39,9 +39,9 @@ while True:
     points = []
 
     lower_red1, upper_red1 = np.array([0, 100, 100]), np.array([10, 255, 255])  # Red color range
-    lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([180, 255, 255])  # Red color range
-    lower_blue, upper_blue = np.array([95, 70, 70]), np.array([130, 255, 255])  # Blue color range
-    lower_yellow, upper_yellow = np.array([20, 100, 100]), np.array([40, 255, 255])  # Yellow color range
+    lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([179, 255, 255])  # Red color range
+    lower_blue, upper_blue = np.array([100, 100, 0]), np.array([140, 255, 255])  # Blue color range
+    lower_yellow, upper_yellow = np.array([10, 100, 100]), np.array([40, 255, 255])  # Yellow color range
     lower_wood, upper_wood = np.array([12, 50, 100]), np.array([40, 200, 200])
 
     lower_red_combined = np.minimum(lower_red1, lower_red2)

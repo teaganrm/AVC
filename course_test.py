@@ -91,7 +91,6 @@ serial_port.write(FORWARD20)
 time.sleep(0.2)
 serial_port.write(FORWARD30)
 
-
 def show_distance(event, x, y, args, params):
     print(x, y)
 
@@ -141,7 +140,6 @@ def detect_two_colors(mask, color_name, color_frame):
     else:
         return None
     
-
 def course_correct(center_x):
     # in this case, windowHalf = 320, pixelsPerDegree = 10
     global HALF_WINDOW_SIZE
@@ -236,6 +234,55 @@ def blue_bucket_function(center_x, distance):
     cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
                     2)
     
+def yellow_bucket_function(center_x, distance):
+    global speed_var
+    global message
+    # always check to see if we're aligned
+    aligned = course_correct(center_x)
+    if (not aligned[0]):
+        message = " " + aligned[1] + " " + aligned[2] # if not aligned, course correct
+        if aligned[1] == 'R':
+            serial_port.write(RIGHT23) # turn right 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning right")
+            serial_port.write(MIDDLE)
+
+        elif aligned[1] == 'L':
+            serial_port.write(LEFT23) # turn left 23 degrees to align
+            startTime = time.time()
+            while time.time() - startTime < 0.1: # recenter servo after 0.1 seconds
+                print("aligning left")
+            serial_port.write(MIDDLE)
+        
+    else:
+        if (distance < 1500 and distance > 50): # if aligned and close, perform action
+            startTime = time.time()
+            serial_port.write(NEUTRAL)
+            while time.time() - startTime < 2:
+                print("stopping")
+            serial_port.write(RIGHT45)
+            serial_port.write(FORWARD20)
+            startTime = time.time()
+            while time.time() - startTime < 0.2:
+                print("forward 20")
+            serial_port.write(FORWARD30)
+            startTime = time.time()
+            while time.time() - startTime < 4:
+                print("go right for 4 seconds")
+            serial_port.write(LEFT68)
+            startTime = time.time()
+            while time.time() - startTime < 6:
+                print("go left for 6 seconds")
+            serial_port.write(MIDDLE)
+            serial_port.write(FORWARD35)
+            obstacleCount = obstacleCount +1
+        else:
+            message = " ALIGNED"    # if aligned but far
+            #serial_port.write(MIDDLE) # realign servo
+    cv2.putText(color_frame, "{}mm".format(distance) + message, (point[0], point[1] - 20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0),
+                    2)
+    
 def red_bucket_function(center_x, distance):
     global speed_var
     # always check to see if we're aligned
@@ -279,7 +326,7 @@ def red_bucket_function(center_x, distance):
             serial_port.write(MIDDLE) # centralize servo
             ramp_speed(60) # go forward 60%
 
-def wood_bucket_function(center_x, distance):
+def wood_function(center_x, distance):
     global speed_var
     # always check to see if we're aligned
     aligned = course_correct(center_x)
@@ -343,19 +390,25 @@ while True:
     wood_mask = cv2.inRange(img, lower_wood, upper_wood)
 
      # read only certain color depending on obstacle counter
-    if obstacleCount in [0, 1, 3, 5]:
+    if obstacleCount in [0, 2, 4, 6]:
         blue_point = detect_largest_color(blue_mask, "Blue", color_frame)
         if (blue_point):
             points.append(blue_point)
         else:
             points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
-    elif obstacleCount in [2]:
+    elif obstacleCount in [1]:
+        yellow_point = detect_largest_color(yellow_mask, "Yellow", color_frame)
+        if (yellow_point):
+            points.append(yellow_point)
+        else:
+            points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
+    elif obstacleCount in [3]:
         wood_point = detect_largest_color(wood_mask, "Wood", color_frame)
         if (wood_point):
             points.append(wood_point)
         else:
             points.append((color_frame.shape[1] // 2, color_frame.shape[0] // 2))
-    elif obstacleCount == 4:
+    elif obstacleCount == 5:
         red_point = detect_two_colors(red_mask, "Red", color_frame)
         if (red_point):
             points.append(red_point)
@@ -366,8 +419,10 @@ while True:
         distance = depth_frame[point[1], point[0]]
         if point == blue_point:
             blue_bucket_function(point[0], distance)
+        elif point == yellow_point:
+            yellow_bucket_function(point[0], distance)
         elif point == wood_point:
-            wood_bucket_function(point[0], distance)
+            wood_function(point[0], distance)
         elif point == red_point:
             redMidpoint = (point[0] + point[2]) // 2
             red_bucket_function(redMidpoint, distance)

@@ -12,5 +12,7 @@ In order to run this code, you will need a way to transmit UART commands. For ou
 
 Without a way to simulate UART commands, the program will send an error code looking for a connection to the /dev/ttyTHS1 port. 
 
-## Software 
-Once all the hardware is set up, the program can be run with: 
+## Running the Program 
+Once all the hardware is set up, navigate to the directory in which it is downloaded and run this command: ` python3 avc.py ` 
+
+Please note that the realsense_depth.py code is initializing the camera and needs to be in the same directory as avc.py for everything to work properly. 
